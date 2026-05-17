@@ -52,8 +52,6 @@ namespace project
             };
 
             _auth = new FirebaseAuthClient(authConfig);
-
-            // DB client is created AFTER auth so we can pass the token
             _db = new FirebaseClient(FirebaseDatabaseUrl);
         }
 
@@ -65,7 +63,6 @@ namespace project
 
             try
             {
-                // Step 1: Create Firebase Auth user
                 result = await _auth.CreateUserWithEmailAndPasswordAsync(email, password, firstName);
 
                 _currentCredential = result;
@@ -73,10 +70,8 @@ namespace project
                 CurrentUserEmail = email;
                 CurrentToken = await result.User.GetIdTokenAsync();
 
-                // Step 2: Send email verification
                 await SendEmailVerificationAsync(CurrentToken);
 
-                // Step 3: Create an authenticated DB client using the user's token
                 var authenticatedDb = new FirebaseClient(
                     FirebaseDatabaseUrl,
                     new FirebaseOptions
@@ -84,7 +79,6 @@ namespace project
                         AuthTokenAsyncFactory = () => Task.FromResult(CurrentToken)
                     });
 
-                // Step 4: Write to Realtime Database using authenticated client
                 await authenticatedDb
                     .Child("users")
                     .Child(CurrentUserId)
@@ -98,27 +92,18 @@ namespace project
                         IsEmailVerified = false
                     });
 
-                // Update the global DB client to use auth token going forward
                 _db = authenticatedDb;
 
                 return true;
             }
             catch (Exception)
             {
-                // Rollback: delete the ghost Auth user if DB write failed
                 if (result != null)
                 {
-                    try
-                    {
-                        await result.User.DeleteAsync();
-                    }
-                    catch
-                    {
-                        // Ignore rollback errors silently
-                    }
+                    try { await result.User.DeleteAsync(); }
+                    catch { }
                 }
 
-                // Reset state
                 CurrentUserId = null;
                 CurrentUserEmail = null;
                 CurrentToken = null;
@@ -139,7 +124,6 @@ namespace project
             CurrentUserEmail = email;
             CurrentToken = await result.User.GetIdTokenAsync();
 
-            // Use authenticated DB client
             _db = new FirebaseClient(
                 FirebaseDatabaseUrl,
                 new FirebaseOptions
@@ -172,7 +156,6 @@ namespace project
 
             var payload = new { requestType = "VERIFY_EMAIL", idToken };
             var json = JsonSerializer.Serialize(payload);
-
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             await client.PostAsync(
@@ -188,7 +171,6 @@ namespace project
             CurrentToken = null;
             _currentCredential = null;
 
-            // Reset DB to unauthenticated client
             _db = new FirebaseClient(FirebaseDatabaseUrl);
         }
 
@@ -205,7 +187,6 @@ namespace project
             EnsureUser();
 
             var refDb = _db.Child("users").Child(CurrentUserId).Child("totalAttempts");
-
             var current = await refDb.OnceSingleAsync<int?>();
             int newValue = (current ?? 0) + 1;
 
@@ -231,7 +212,6 @@ namespace project
             EnsureUser();
 
             var refDb = _db.Child("users").Child(CurrentUserId).Child("totalLogs");
-
             var current = await refDb.OnceSingleAsync<int?>();
             int newValue = (current ?? 0) + 1;
 
@@ -299,7 +279,7 @@ namespace project
             await _auth.ResetEmailPasswordAsync(email);
         }
 
-
+        // ─── COPING PROGRESS ─────────────────────────────────
         public static async Task SaveCopingProgressAsync(int completed, int total)
         {
             EnsureUser();
@@ -309,24 +289,34 @@ namespace project
                 .Child("copingProgress")
                 .PutAsync(new { completed, total });
         }
+
         public static async Task<(int completed, int total)> GetCopingProgressAsync()
         {
             EnsureUser();
 
-            var result = await _db.Child("users")
-                .Child(CurrentUserId)
-                .Child("copingProgress")
-                .OnceSingleAsync<dynamic>();
+            try
+            {
+                var result = await _db.Child("users")
+                    .Child(CurrentUserId)
+                    .Child("copingProgress")
+                    .OnceSingleAsync<dynamic>();
 
-            if (result == null)
+                if (result == null)
+                    return (0, 4);
+
+                int completed = result.completed;
+                int total = result.total;
+
+                return (completed, total);
+            }
+            catch
+            {
+                // New account — no data yet
                 return (0, 4);
-
-            int completed = result.completed;
-            int total = result.total;
-
-            return (completed, total);
+            }
         }
 
+        // ─── CHANGE PASSWORD ──────────────────────────────────
         public static async Task ChangePasswordAsync(string currentPassword, string newPassword)
         {
             EnsureUser();
@@ -336,80 +326,137 @@ namespace project
 
             await result.User.ChangePasswordAsync(newPassword);
         }
+
+        // ─── HAS LOGGED MOOD TODAY ────────────────────────────
         public static async Task<bool> HasLoggedMoodTodayAsync()
         {
             EnsureUser();
 
-            var today = DateTime.Today;
+            try
+            {
+                var today = DateTime.Today;
 
-            var entries = await _db.Child("moods")
-                .Child(CurrentUserId)
-                .OnceAsync<MoodEntry>();
+                var entries = await _db.Child("moods")
+                    .Child(CurrentUserId)
+                    .OnceAsync<MoodEntry>();
 
-            return entries.Any(e =>
-                DateTime.TryParse(e.Object.CreatedAt, out var d) &&
-                d.Date == today);
+                return entries.Any(e =>
+                    DateTime.TryParse(e.Object.CreatedAt, out var d) &&
+                    d.Date == today);
+            }
+            catch
+            {
+                // New account — no mood logs yet
+                return false;
+            }
         }
 
+        // ─── GET USER PROFILE ─────────────────────────────────
         public static async Task<UserProfile> GetUserProfileAsync()
         {
             EnsureUser();
 
-            return await _db.Child("users")
-                .Child(CurrentUserId)
-                .OnceSingleAsync<UserProfile>();
+            try
+            {
+                return await _db.Child("users")
+                    .Child(CurrentUserId)
+                    .OnceSingleAsync<UserProfile>();
+            }
+            catch
+            {
+                return null;
+            }
         }
 
+        // ─── RESET COPING IF NEW WEEK ─────────────────────────
         public static async Task ResetCopingProgressIfNewWeekAsync()
         {
             EnsureUser();
+
+            // Guard: skip if user ID is missing
+            if (string.IsNullOrEmpty(CurrentUserId)) return;
 
             int daysSinceMonday = ((int)DateTime.Today.DayOfWeek + 6) % 7;
             var weekStart = DateTime.Today.AddDays(-daysSinceMonday);
             string weekKey = weekStart.ToString("yyyy-MM-dd");
 
-            var lastReset = await _db.Child("users")
-                .Child(CurrentUserId)
-                .Child("lastCopingReset")
-                .OnceSingleAsync<string>();
-
-            if (lastReset != weekKey)
+            try
             {
-                await SaveCopingProgressAsync(0, 4);
-
-                await _db.Child("users")
+                var lastReset = await _db.Child("users")
                     .Child(CurrentUserId)
                     .Child("lastCopingReset")
-                    .PutAsync(weekKey);
+                    .OnceSingleAsync<string>();
+
+                // New account — no lastCopingReset yet
+                if (lastReset == null)
+                {
+                    await _db.Child("users")
+                        .Child(CurrentUserId)
+                        .Child("lastCopingReset")
+                        .PutAsync(weekKey);
+                    return;
+                }
+
+                if (lastReset != weekKey)
+                {
+                    await SaveCopingProgressAsync(0, 4);
+
+                    await _db.Child("users")
+                        .Child(CurrentUserId)
+                        .Child("lastCopingReset")
+                        .PutAsync(weekKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ResetCopingProgressIfNewWeekAsync error: {ex.Message}");
             }
         }
 
+        // ─── WEEKLY MOOD COUNT ────────────────────────────────
         public static async Task<int> GetWeeklyMainMoodCountAsync()
         {
             EnsureUser();
 
-            int daysSinceMonday = ((int)DateTime.Today.DayOfWeek + 6) % 7;
-            var weekStart = DateTime.Today.AddDays(-daysSinceMonday);
+            try
+            {
+                int daysSinceMonday = ((int)DateTime.Today.DayOfWeek + 6) % 7;
+                var weekStart = DateTime.Today.AddDays(-daysSinceMonday);
 
-            var entries = await _db.Child("moods")
-                .Child(CurrentUserId)
-                .OnceAsync<MoodEntry>();
+                var entries = await _db.Child("moods")
+                    .Child(CurrentUserId)
+                    .OnceAsync<MoodEntry>();
 
-            return entries.Count(e =>
-                DateTime.TryParse(e.Object.CreatedAt, out var d) &&
-                d.Date >= weekStart);
+                return entries.Count(e =>
+                    DateTime.TryParse(e.Object.CreatedAt, out var d) &&
+                    d.Date >= weekStart);
+            }
+            catch
+            {
+                // New account — no moods yet
+                return 0;
+            }
         }
 
+        // ─── STREAK ───────────────────────────────────────────
         public static async Task<int> GetStreakAsync()
         {
             EnsureUser();
 
-            var result = await _db.Child("users")
-                .Child(CurrentUserId)
-                .Child("streak")
-                .OnceSingleAsync<int?>();
+            try
+            {
+                var result = await _db.Child("users")
+                    .Child(CurrentUserId)
+                    .Child("streak")
+                    .OnceSingleAsync<int?>();
 
-            return result ?? 0;
+                return result ?? 0;
+            }
+            catch
+            {
+                // New account — no streak yet
+                return 0;
+            }
         }
     }
 }
