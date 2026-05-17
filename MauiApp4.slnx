@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ClassLibrary1/ClassLibrary1.csproj" />
+  <Project Path="MauiApp4/project.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>

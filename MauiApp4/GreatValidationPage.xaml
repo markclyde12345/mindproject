@@ -1,0 +1,57 @@
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="project.GreatValidationPage"
+              BackgroundColor="#F4F4F4">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="20">
+
+            <ProgressBar Progress="0.7"/>
+
+            <VerticalStackLayout HorizontalOptions="Center">
+
+                <Frame BackgroundColor="Green"
+                       CornerRadius="50"
+                       Padding="15"
+                       HorizontalOptions="Center"
+                       HasShadow="False">
+
+                    <Label Text="😊"
+                            FontSize="28"
+                            HorizontalOptions="Center" />
+
+                </Frame>
+
+                <Label Text="You're feeling Great"
+                       FontSize="20"
+                       TextColor="black"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"/>
+
+                <Label Text="Let's amplify this positive feeling through gratitude"
+                       FontSize="14"
+                       TextColor="black"
+                       HorizontalTextAlignment="Center"/>
+
+            </VerticalStackLayout>
+
+            <Frame BackgroundColor="#E6F0FF">
+                <Label Text="Gratitude activity: Expressing gratitude can boost your mood even further." TextColor="black"/>
+            </Frame>
+
+            <Label Text="What are you grateful for today?" TextColor="black" FontAttributes="Bold"/>
+
+            <Entry x:Name="GratitudeEntry" Background="Gray" HeightRequest="200" VerticalTextAlignment="Start" TextColor="Black"
+                Placeholder="Additional reflection about how you're feeling..." PlaceholderColor="LightGray"/>
+
+            <Button
+                Text="Save Gratitude"
+                BackgroundColor="#007AFF"
+                TextColor="White"
+                 CornerRadius="8"
+                Clicked="OnSaveGratitudeClicked"/>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
