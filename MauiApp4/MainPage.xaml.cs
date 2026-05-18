@@ -1,4 +1,4 @@
-﻿namespace project;
+namespace project;
 
 public partial class MainPage : ContentPage
 {
@@ -52,15 +52,5 @@ public partial class MainPage : ContentPage
     private void OnShowPasswordTapped(object sender, EventArgs e)
     {
         PasswordEntry.IsPassword = !PasswordEntry.IsPassword;
-    }
-
-    private async void OnGoogleLoginTapped(object sender, EventArgs e)
-    {
-        await DisplayAlert("Coming Soon", "Google sign-in will be available in the mobile version.", "OK");
-    }
-
-    private async void OnFacebookLoginTapped(object sender, EventArgs e)
-    {
-        await DisplayAlert("Coming Soon", "Facebook sign-in will be available in the mobile version.", "OK");
     }
 }
